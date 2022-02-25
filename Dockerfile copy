@@ -1,0 +1,75 @@
+#Deriving the latest base image
+# FROM python:3.9
+FROM python:3.9.0b4-alpine3.12
+
+
+#Labels as key value pair
+# LABEL Maintainer="roushan.me17"
+
+# Any working directory can be chosen as per choice like '/' or '/home' etc
+# i have chosen /usr/app/src
+WORKDIR /app
+
+RUN apt-get update
+# install drover mssql odbc
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+RUN curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list
+
+RUN apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17  \
+    && ACCEPT_EULA=Y apt-get install -y mssql-tools
+
+RUN echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bash_profile
+RUN echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc
+# RUN source ~/.bashrc
+
+# install FreeTDS and dependencies
+RUN apt-get update \
+    && apt-get install unixodbc -y \
+    && apt-get install unixodbc-dev -y \
+    && apt-get install freetds-dev -y \
+    && apt-get install freetds-bin -y \
+    && apt-get install tdsodbc -y \
+    && apt-get install --reinstall build-essential -y 
+
+RUN /usr/local/bin/python -m pip install --upgrade pip
+
+# populate "ocbcinst.ini"
+RUN echo "[FreeTDS]\n\
+Description = FreeTDS unixODBC Driver\n\
+Driver = /usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so\n\
+Setup = /usr/lib/x86_64-linux-gnu/odbc/libtdsS.so" >> /etc/odbcinst.ini
+
+RUN pip install numpy \
+        pandas  
+
+# install pyodbc (and, optionally, sqlalchemy)
+RUN pip install --trusted-host pypi.org pyodbc requests
+
+#to COPY the remote file at working directory in container
+# Now the structure looks like this '/usr/app/src/test.py'
+# COPY file.py /app/file.py
+# COPY wwwroot /app/wwwroot
+ADD . /app/
+
+RUN apt-get install -y cron
+
+# Create empty log (TAIL needs this)
+# RUN touch /var/log/cron.log
+
+# Copy and enable your CRON task
+# COPY crontab /etc/cron.d/crontab
+COPY py_file /bin/py_file
+COPY crontab /var/spool/cron/crontabs/root
+
+# RUN chmod 0644 /etc/cron.d/crontab
+# RUN chmod +x /etc/cron.d/crontab
+# RUN crontab -u root /etc/cron.d/crontab
+RUN chmod +x /bin/py_file
+
+# ENV PYTHONUNBUFFERED 1
+#CMD instruction should be used to run the software
+#contained by your image, along with any arguments.
+# CMD [ "python", "/app/file.py"]
+# CMD ["cron", "-f"]
+CMD crond -l 2 -f
